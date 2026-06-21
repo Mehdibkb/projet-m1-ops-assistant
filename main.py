@@ -77,7 +77,7 @@ def main():
     load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     
-    if not api_key or api_key == "ma-cle-secrete":
+    if not api_key or api_key == "sk-ant-ta-cle-secrete-ici":
         logging.error("ÉCHEC FATAL : Clé API Anthropic introuvable ou non configurée.")
         return
         
