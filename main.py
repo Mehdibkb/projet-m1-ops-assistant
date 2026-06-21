@@ -58,9 +58,9 @@ def analyze_with_ai(job_description, candidate_profile, api_key):
     """
 
     try:
-        # Appel à l'API (Utilisation de Haiku : le modèle le plus rapide et le moins cher pour l'automatisation)
+        # Appel à l'API (Utilisation du modèle successeur)
         response = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-haiku-4-5-20251001",
             max_tokens=300,
             messages=[
                 {"role": "user", "content": prompt}
