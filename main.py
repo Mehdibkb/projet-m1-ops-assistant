@@ -2,6 +2,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import anthropic
+import feedparser
 
 # Configuration des logs
 logging.basicConfig(
@@ -19,28 +20,46 @@ def read_candidate_profile():
         return None
 
 def fetch_jobs():
-    """Simule la récupération d'une offre pour tester la logique de l'IA (Mocking)"""
-    logging.info("Étape 1 : Récupération des offres (Mode Simulation activé)...")
+    """Récupère de VÉRITABLES offres d'emploi via un flux RSS public"""
+    logging.info("Étape 1 : Récupération des offres en temps réel (via Flux RSS)...")
     
-    # Fausse offre d'emploi parfaitement taillée pour tester mon profil
-    dummy_job = """
-    Titre : Alternance Ingénieur DevOps (H/F)
-    Entreprise : TechCorp France
-    Description : Nous recherchons un alternant pour rejoindre notre équipe infrastructure.
-    Missions : Déploiement de pipelines CI/CD, conteneurisation des applications.
-    Stack requise : Docker, Kubernetes, Jenkins, GitLab CI, AWS, Terraform.
-    Rythme souhaité : 3 semaines entreprise / 1 semaine école.
-    """
-    return [dummy_job]
+    # URL d'un flux RSS d'offres d'emploi. 
+    # On utilise un flux public pour contourner les protections anti-bot complexes
+    rss_url = "https://www.wizbii.com/company/wizbii/jobs.rss" # Exemple de flux (à remplacer par la suite par un plus spécifique si besoin)
+    
+    # Pour un test DevOps pertinent, simulons la recherche sur un agrégateur orienté tech ou alternance.
+    # Adzuna propose des flux RSS très propres. Cherchons "DevOps Alternance"
+    adzuna_rss = "https://www.adzuna.fr/search/jobs.rss?q=devops+alternance"
+    
+    feed = feedparser.parse(adzuna_rss)
+    real_jobs = []
+    
+    # On limite à 3 offres pour ne pas exploser la consommation de l'API Anthropic lors des tests
+    for entry in feed.entries[:3]:
+        job_title = entry.title
+        job_summary = entry.summary
+        job_link = entry.link
+        
+        # On formate l'offre pour que Claude puisse la lire facilement
+        formatted_job = f"""
+        Titre : {job_title}
+        Lien : {job_link}
+        Description courte : {job_summary}
+        """
+        real_jobs.append(formatted_job)
+        logging.info(f"Offre trouvée : {job_title}")
+        
+    if not real_jobs:
+        logging.warning("Aucune offre trouvée dans le flux RSS actuel.")
+        
+    return real_jobs
 
 def analyze_with_ai(job_description, candidate_profile, api_key):
     """Envoie l'offre et le profil à Claude pour validation."""
     logging.info("Étape 2 : Analyse de l'offre par Claude...")
     
-    # Initialisation du client Anthropic
     client = anthropic.Anthropic(api_key=api_key)
     
-    # Le Prompt (Les instructions strictes de l'agent)
     prompt = f"""
     Tu es un expert en recrutement IT. Ton rôle est d'analyser une offre d'emploi et de déterminer si elle correspond au profil du candidat.
     
@@ -54,11 +73,10 @@ def analyze_with_ai(job_description, candidate_profile, api_key):
     1. Calcule un pourcentage de correspondance (matching).
     2. Si le matching est supérieur ou égal à 70%, écris "STATUT: VALIDE". Sinon, écris "STATUT: REJETE".
     3. Résume l'analyse avec 2 points de correspondances forts et 1 point d'attention éventuel.
-    Sois concis et direct.
+    Sois concis et direct. Ne donne pas de conseils généraux.
     """
 
     try:
-        # Appel à l'API (Utilisation du modèle successeur)
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=300,
@@ -81,18 +99,20 @@ def main():
         logging.error("ÉCHEC FATAL : Clé API Anthropic introuvable ou non configurée.")
         return
         
-    # 1. Lecture du profil
     candidate_profile = read_candidate_profile()
     if not candidate_profile:
         return
 
-    # 2. Récupération des offres (fausses pour le moment)
+    # Récupération des VRAIES offres
     jobs = fetch_jobs()
     
-    # 3. Analyse
-    for job in jobs:
-        result = analyze_with_ai(job, candidate_profile, api_key)
-        logging.info(f"--- RÉSULTAT DE L'ANALYSE ---\n{result}\n-----------------------------")
+    if jobs:
+        # Analyse de chaque vraie offre trouvée
+        for index, job in enumerate(jobs):
+            logging.info(f"--- DÉBUT DE L'ANALYSE DE L'OFFRE {index + 1} ---")
+            result = analyze_with_ai(job, candidate_profile, api_key)
+            logging.info(f"\n{result}\n")
+            logging.info(f"--- FIN DE L'ANALYSE DE L'OFFRE {index + 1} ---")
 
 if __name__ == "__main__":
     main()
