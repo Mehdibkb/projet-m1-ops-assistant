@@ -37,7 +37,7 @@ def main():
     api_key = os.getenv("ANTHROPIC_API_KEY")
     
     # Test "Fail Fast" : On coupe tout si la sécurité n'est pas bonne
-    if not api_key or api_key == "sk-ant-ta-cle-secrete-ici":
+    if not api_key or api_key == "ma-cle-secrete":
         logging.error("ÉCHEC Mehdi Mehdi : Clé API Anthropic introuvable ou non configurée ")
         return
 
