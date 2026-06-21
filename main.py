@@ -24,7 +24,7 @@ def fetch_jobs():
     """Récupère de VÉRITABLES offres d'emploi en contournant les anti-bots et en filtrant les écoles."""
     logging.info("Étape 1 : Récupération des offres en temps réel...")
     
-    adzuna_rss = "[https://www.adzuna.fr/search/jobs.rss?q=devops+alternance](https://www.adzuna.fr/search/jobs.rss?q=devops+alternance)"
+    adzuna_rss = "https://www.adzuna.fr/search/jobs.rss?q=devops+alternance"
     
     # 1. Le déguisement (Spoofing du User-Agent) pour passer le pare-feu
     headers = {
