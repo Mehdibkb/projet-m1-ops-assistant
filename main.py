@@ -1,5 +1,6 @@
 import os
 import logging
+import requests # pour faire des requêtes HTTP
 from dotenv import load_dotenv
 import anthropic
 import feedparser
@@ -20,37 +21,106 @@ def read_candidate_profile():
         return None
 
 def fetch_jobs():
-    """Récupère de VÉRITABLES offres d'emploi via un flux RSS public"""
+    """Récupère de VÉRITABLES offres en déguisant le script en navigateur web."""
     logging.info("Étape 1 : Récupération des offres en temps réel (via Flux RSS)...")
     
-    # URL d'un flux RSS d'offres d'emploi. 
-    # On utilise un flux public pour contourner les protections anti-bot complexes
-    rss_url = "https://www.wizbii.com/company/wizbii/jobs.rss" # Exemple de flux (à remplacer par la suite par un plus spécifique si besoin)
-    
-    # Pour un test DevOps pertinent, simulons la recherche sur un agrégateur orienté tech ou alternance.
-    # Adzuna propose des flux RSS très propres. Cherchons "DevOps Alternance"
     adzuna_rss = "https://www.adzuna.fr/search/jobs.rss?q=devops+alternance"
     
-    feed = feedparser.parse(adzuna_rss)
+    # LE DÉGUISEMENT (User-Agent) : On fait croire au serveur qu'on est sur Chrome/Windows
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    }
+    
+    try:
+        # On télécharge d'abord leC'est un grand classique du web scraping et une excellente observation de ta part ! 
+
+Il y a deux problèmes distincts ici, et nous allons régler les deux d'un coup avec une vraie approche d'ingénieur.
+
+### 1. Pourquoi le navigateur voit les offres, mais pas le code ?
+C'est à cause du "videur" à l'entrée du site Adzuna. Quand tu utilises ton navigateur, il envoie une carte d'identité (le `User-Agent`) qui dit : *"Bonjour, je suis un humain utilisant Google Chrome sur Windows"*. Le site te laisse entrer.
+Quand ton script Python s'exécute, il dit : *"Bonjour, je suis le robot Python-urllib/feedparser"*. Le pare-feu d'Adzuna bloque immédiatement la connexion pour se protéger des bots, et te renvoie une page vide. 
+**La solution :** Nous allons déguiser notre script Python en utilisant la bibliothèque `requests` pour lui donner un faux `User-Agent` de navigateur web.
+
+### 2. Le fléau des fausses offres d'écoles
+C'est le cauchemar des étudiants en recherche d'alternance : les écoles de commerce ou de tech polluent les flux avec de fausses offres pour recruter des élèves. 
+**La solution FinOps :** Nous n'allons pas demander à l'IA de filtrer ça, car cela te coûterait des crédits (tokens) pour rien. Nous allons mettre en place un filtre de mots-clés directement en Python. Si le titre ou la description contient des mots comme "école", "formation" ou "rejoint notre campus", le script jettera l'offre à la poubelle avant même de réveiller Claude.
+
+---
+
+### Le code mis à jour (Le Double Filtre)
+
+Voici ton fichier `main.py` complet avec le déguisement (`User-Agent`) et le filtre anti-écoles :
+
+```python
+import os
+import logging
+import requests
+from dotenv import load_dotenv
+import anthropic
+import feedparser
+
+# Configuration des logs
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def read_candidate_profile():
+    """Lit le contenu du candidate.md"""
+    try:
+        with open("candidate.md", "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        logging.error("ÉCHEC FATAL : Le fichier candidate.md est introuvable.")
+        return None
+
+def fetch_jobs():
+    """Récupère de VÉRITABLES offres d'emploi en contournant les anti-bots et en filtrant les écoles."""
+    logging.info("Étape 1 : Récupération des offres en temps réel...")
+    
+    adzuna_rss = "[https://www.adzuna.fr/search/jobs.rss?q=devops+alternance](https://www.adzuna.fr/search/jobs.rss?q=devops+alternance)"
+    
+    # 1. Le déguisement (Spoofing du User-Agent) pour passer le pare-feu
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    try:
+        # On télécharge le flux avec requests, puis on le donne à feedparser
+        response = requests.get(adzuna_rss, headers=headers, timeout=10)
+        feed = feedparser.parse(response.content)
+    except Exception as e:
+        logging.error(f"Erreur lors de la connexion au flux RSS : {e}")
+        return []
+
     real_jobs = []
     
-    # On limite à 3 offres pour ne pas exploser la consommation de l'API Anthropic lors des tests
-    for entry in feed.entries[:3]:
+    # 2. Le filtre anti-écoles (Mots-clés à exclure pour économiser les tokens API)
+    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "étudiant recherché pour notre formation", "rejoins notre école"]
+    
+    # On parcourt les 5 premières offres
+    for entry in feed.entries[:5]:
         job_title = entry.title
         job_summary = entry.summary
         job_link = entry.link
         
-        # On formate l'offre pour que Claude puisse la lire facilement
+        # Vérification des mots interdits (en minuscules pour ne rien rater)
+        texte_a_verifier = f"{job_title} {job_summary}".lower()
+        if any(mot in texte_a_verifier for mot in mots_interdits):
+            logging.warning(f"Offre ignorée (Détection d'école/formation) : {job_title}")
+            continue # On passe directement à l'offre suivante
+        
+        # Formatage de l'offre propre
         formatted_job = f"""
         Titre : {job_title}
         Lien : {job_link}
         Description courte : {job_summary}
         """
         real_jobs.append(formatted_job)
-        logging.info(f"Offre trouvée : {job_title}")
+        logging.info(f"Offre valide trouvée et conservée : {job_title}")
         
     if not real_jobs:
-        logging.warning("Aucune offre trouvée dans le flux RSS actuel.")
+        logging.warning("Aucune offre d'entreprise pure trouvée dans le flux RSS actuel après filtrage.")
         
     return real_jobs
 
@@ -103,11 +173,9 @@ def main():
     if not candidate_profile:
         return
 
-    # Récupération des VRAIES offres
     jobs = fetch_jobs()
     
     if jobs:
-        # Analyse de chaque vraie offre trouvée
         for index, job in enumerate(jobs):
             logging.info(f"--- DÉBUT DE L'ANALYSE DE L'OFFRE {index + 1} ---")
             result = analyze_with_ai(job, candidate_profile, api_key)
