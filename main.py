@@ -1,54 +1,98 @@
 import os
 import logging
 from dotenv import load_dotenv
+import anthropic
 
-# Section 1 : Configuration des logs
+# Configuration des logs
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Section 2 : Modules de l'application
+def read_candidate_profile():
+    """Lit le contenu du candidate.md"""
+    try:
+        with open("candidate.md", "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        logging.error("ÉCHEC FATAL : Le fichier candidate.md est introuvable.")
+        return None
 
 def fetch_jobs():
-    """Récupère les offres depuis Linkedin"""
-    logging.info("Étape 1 : Récupération des offres d'emploi...")
-    # La logique de requêtage web viendra ici
-    return ["Offre 1", "Offre 2"]
+    """Simule la récupération d'une offre pour tester la logique de l'IA (Mocking)"""
+    logging.info("Étape 1 : Récupération des offres (Mode Simulation activé)...")
+    
+    # Fausse offre d'emploi parfaitement taillée pour tester mon profil
+    dummy_job = """
+    Titre : Alternance Ingénieur DevOps (H/F)
+    Entreprise : TechCorp France
+    Description : Nous recherchons un alternant pour rejoindre notre équipe infrastructure.
+    Missions : Déploiement de pipelines CI/CD, conteneurisation des applications.
+    Stack requise : Docker, Kubernetes, Jenkins, GitLab CI, AWS, Terraform.
+    Rythme souhaité : 3 semaines entreprise / 1 semaine école.
+    """
+    return [dummy_job]
 
-def analyze_with_ai(jobs):
-    """Envoie les offres à Claude pour valider qu'elles sont pertinentes"""
-    logging.info("Étape 2 : Analyse des offres par l'Intelligence Artificielle...")
-    # La logique de l'API Anthropic viendra ici
-    return ["Offre 1 (Validée)"]
+def analyze_with_ai(job_description, candidate_profile, api_key):
+    """Envoie l'offre et le profil à Claude pour validation."""
+    logging.info("Étape 2 : Analyse de l'offre par Claude...")
+    
+    # Initialisation du client Anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    
+    # Le Prompt (Les instructions strictes de l'agent)
+    prompt = f"""
+    Tu es un expert en recrutement IT. Ton rôle est d'analyser une offre d'emploi et de déterminer si elle correspond au profil du candidat.
+    
+    PROFIL DU CANDIDAT :
+    {candidate_profile}
+    
+    OFFRE D'EMPLOI :
+    {job_description}
+    
+    Règles de sortie obligatoires :
+    1. Calcule un pourcentage de correspondance (matching).
+    2. Si le matching est supérieur ou égal à 70%, écris "STATUT: VALIDE". Sinon, écris "STATUT: REJETE".
+    3. Résume l'analyse avec 2 points de correspondances forts et 1 point d'attention éventuel.
+    Sois concis et direct.
+    """
 
-def export_results(analyzed_jobs):
-    """Sauvegarde les offres validées dans un fichier Excel"""
-    logging.info("Étape 3 : Exportation des résultats...")
-    # La logique d'écriture CSV/Excel viendra ici
-
-# --- POINT D'ENTRÉE PRINCIPAL ---
+    try:
+        # Appel à l'API (Utilisation de Haiku : le modèle le plus rapide et le moins cher pour l'automatisation)
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=300,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.content[0].text
+    except Exception as e:
+        logging.error(f"Erreur lors de l'appel à l'API Anthropic : {e}")
+        return None
 
 def main():
-    logging.info("Démarrage du pipeline de recherche d'offres d'emploi sur Linkedin")
+    logging.info("Démarrage du pipeline de recherche automatisé.")
     
-    # Chargement sécurisé des mots de passe depuis .env
     load_dotenv()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     
-    # Test "Fail Fast" : On coupe tout si la sécurité n'est pas bonne
     if not api_key or api_key == "ma-cle-secrete":
-        logging.error("ÉCHEC Mehdi Mehdi : Clé API Anthropic introuvable ou non configurée ")
+        logging.error("ÉCHEC FATAL : Clé API Anthropic introuvable ou non configurée.")
+        return
+        
+    # 1. Lecture du profil
+    candidate_profile = read_candidate_profile()
+    if not candidate_profile:
         return
 
-    logging.info("Sécurité validée. Clé API détectée : Mehdi Mehdi")
-    
-    # Exécution de la chaîne (Le Pipeline)
+    # 2. Récupération des offres (fausses pour le moment)
     jobs = fetch_jobs()
-    results = analyze_with_ai(jobs)
-    export_results(results)
     
-    logging.info("Exécution terminée avec succès : Mehdi Mehdi")
+    # 3. Analyse
+    for job in jobs:
+        result = analyze_with_ai(job, candidate_profile, api_key)
+        logging.info(f"--- RÉSULTAT DE L'ANALYSE ---\n{result}\n-----------------------------")
 
 if __name__ == "__main__":
     main()
