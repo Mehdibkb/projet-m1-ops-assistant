@@ -35,6 +35,11 @@ def fetch_jobs():
         # On télécharge le flux avec requests, puis on le donne à feedparser
         response = requests.get(adzuna_rss, headers=headers, timeout=10)
         feed = feedparser.parse(response.content)
+
+        # --- DEBUGGAGE ADZUNA ---
+        logging.info(f"Code HTTP de la réponse Adzuna : {response.status_code}")
+        logging.info(f"Nombre total d'offres trouvées dans le flux : {len(feed.entries)}")
+        # -----------------------------
     except Exception as e:
         logging.error(f"Erreur lors de la connexion au flux RSS : {e}")
         return []
