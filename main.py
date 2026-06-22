@@ -21,55 +21,44 @@ def read_candidate_profile():
         return None
 
 def fetch_jobs():
-    """Récupère de VÉRITABLES offres d'emploi en contournant les anti-bots et en filtrant les écoles."""
-    logging.info("Étape 1 : Récupération des offres en temps réel...")
+    """Récupère de VÉRITABLES offres d'emploi via le flux RSS d'Indeed France."""
+    logging.info("Étape 1 : Récupération des offres en temps réel sur Indeed...")
     
-    reliable_rss = "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss"
+    # La source issue de mes recherches
+    indeed_rss = "https://fr.indeed.com/rss?q=alternance+devops&l=France"
     
-    # 1. Le déguisement (Spoofing du User-Agent) pour passer le pare-feu
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
     try:
-        # On télécharge le flux avec requests, puis on le donne à feedparser
-        response = requests.get(reliable_rss, headers=headers, timeout=10)
+        response = requests.get(indeed_rss, headers=headers, timeout=10)
         feed = feedparser.parse(response.content)
-
-        # --- DEBUGGAGE ADZUNA ---
-        logging.info(f"Code HTTP de la réponse Adzuna : {response.status_code}")
+        
+        logging.info(f"Code HTTP de la réponse Indeed : {response.status_code}")
         logging.info(f"Nombre total d'offres trouvées dans le flux : {len(feed.entries)}")
-        # -----------------------------
     except Exception as e:
         logging.error(f"Erreur lors de la connexion au flux RSS : {e}")
         return []
 
     real_jobs = []
     
-    # 2. Le filtre anti-écoles (Mots-clés à exclure pour économiser les tokens API)
-    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "étudiant recherché pour notre formation", "rejoins notre école"]
-
-    # 3. Le filtre pro-alternance (Ce qu'on exige)
-    mots_requis = ["alternance", "apprenti", "apprentissage", "professionnalisation", "france", "rennes", "paris"]
+    # Le filtre anti-écoles (Toujours indispensable)
+    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "étudiant recherché", "rejoins notre école", "organisme de formation"]
     
-    # On parcourt les 10 premières offres
+    # On parcourt les 10 premières offres pour nourrir l'IA
     for entry in feed.entries[:10]:
         job_title = entry.title
         job_summary = entry.summary
         job_link = entry.link
         
-        # Vérification des mots interdits (en minuscules pour ne rien rater)
         texte_a_verifier = f"{job_title} {job_summary}".lower()
-        if any(mot in texte_a_verifier for mot in mots_interdits):
-            logging.warning(f"Offre ignorée (Détection d'école/formation) : {job_title}")
-            continue # On passe directement à l'offre suivante
-
-        # Filtre 2 : Est-ce bien une alternance ou en France ?
-        # Si AUCUN des mots requis n'est dans le texte, on rejette l'offre.
-        if not any(mot in texte_a_verifier for mot in mots_requis):
-            logging.warning(f"Offre ignorée (Hors scope / Pas d'alternance) : {job_title}")
-            continue
         
+        # Est-ce une fausse offre d'école ?
+        if any(mot in texte_a_verifier for mot in mots_interdits):
+            logging.warning(f"Offre ignorée (Détection école) : {job_title}")
+            continue 
+            
         # Formatage de l'offre propre
         formatted_job = f"""
         Titre : {job_title}
@@ -137,7 +126,7 @@ def main():
     
     if jobs:
         for index, job in enumerate(jobs):
-            logging.info(f"--- DÉBUT DE L'ANALYSE DE L'OFFRE {index + 1} ---")
+            logging.info(f"--- DEBUT DE L'ANALYSE DE L'OFFRE {index + 1} ---")
             result = analyze_with_ai(job, candidate_profile, api_key)
             logging.info(f"\n{result}\n")
             logging.info(f"--- FIN DE L'ANALYSE DE L'OFFRE {index + 1} ---")
