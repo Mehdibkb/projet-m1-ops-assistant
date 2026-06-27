@@ -3,7 +3,6 @@ import logging
 import requests
 from dotenv import load_dotenv
 import anthropic
-import feedparser
 
 # Configuration des logs
 logging.basicConfig(
@@ -12,7 +11,6 @@ logging.basicConfig(
 )
 
 def read_candidate_profile():
-    """Lit le contenu du candidate.md"""
     try:
         with open("candidate.md", "r", encoding="utf-8") as file:
             return file.read()
@@ -20,67 +18,68 @@ def read_candidate_profile():
         logging.error("ÉCHEC FATAL : Le fichier candidate.md est introuvable.")
         return None
 
-def fetch_jobs():
-    """Récupère de VÉRITABLES offres d'emploi via le flux RSS d'Indeed France."""
-    logging.info("Étape 1 : Récupération des offres en temps réel sur Indeed...")
+def fetch_jobs_via_api(app_id, app_key):
+    """Récupère des offres d'emploi françaises via l'API REST officielle d'Adzuna."""
+    logging.info("Étape 1 : Interrogation de l'API Adzuna (100% Fiable)...")
     
-    # La source issue de mes recherches
-    indeed_rss = "https://fr.indeed.com/rss?q=alternance+devops&l=France"
+    # Endpoint officiel pour la France (fr)
+    url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    # Les paramètres précis de ta recherche métier
+    params = {
+        'app_id': app_id,
+        'app_key': app_key,
+        'results_per_page': 5,      # On limite à 5 offres pour tester
+        'what': 'devops alternance', # Les mots clés
+        'where': 'france',          # Le pays
+        'content-type': 'application/json'
     }
     
     try:
-        response = requests.get(indeed_rss, headers=headers, timeout=10)
-        feed = feedparser.parse(response.content)
-        
-        logging.info(f"Code HTTP de la réponse Indeed : {response.status_code}")
-        logging.info(f"Nombre total d'offres trouvées dans le flux : {len(feed.entries)}")
+        response = requests.get(url, params=params, timeout=10)
+        # Si Adzuna renvoie une erreur (ex: mauvaises clés), le script l'attrape ici
+        response.raise_for_status() 
+        data = response.json()
     except Exception as e:
-        logging.error(f"Erreur lors de la connexion au flux RSS : {e}")
+        logging.error(f"Erreur de connexion à l'API Adzuna : {e}")
         return []
 
     real_jobs = []
+    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "organisme de formation"]
     
-    # Le filtre anti-écoles (Toujours indispensable)
-    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "étudiant recherché", "rejoins notre école", "organisme de formation"]
+    results = data.get('results', [])
+    logging.info(f"Nombre d'offres renvoyées par l'API : {len(results)}")
     
-    # On parcourt les 10 premières offres pour nourrir l'IA
-    for entry in feed.entries[:10]:
-        job_title = entry.title
-        job_summary = entry.summary
-        job_link = entry.link
+    for job in results:
+        job_title = job.get('title', '')
+        job_summary = job.get('description', '')
+        job_link = job.get('redirect_url', '')
+        company = job.get('company', {}).get('display_name', 'Inconnue')
         
         texte_a_verifier = f"{job_title} {job_summary}".lower()
         
-        # Est-ce une fausse offre d'école ?
+        # Filtre anti-écoles conservé
         if any(mot in texte_a_verifier for mot in mots_interdits):
-            logging.warning(f"Offre ignorée (Détection école) : {job_title}")
+            logging.warning(f"Offre ignorée (Détection école) : {job_title} chez {company}")
             continue 
             
-        # Formatage de l'offre propre
         formatted_job = f"""
         Titre : {job_title}
-        Lien : {job_link}
-        Description courte : {job_summary}
+        Entreprise : {company}
+        Lien pour postuler : {job_link}
+        Description : {job_summary}
         """
         real_jobs.append(formatted_job)
-        logging.info(f"Offre valide trouvée et conservée : {job_title}")
-        
-    if not real_jobs:
-        logging.warning("Aucune offre d'entreprise pure trouvée dans le flux RSS actuel après filtrage.")
+        logging.info(f" Offre VALIDE conservée : {job_title} ({company})")
         
     return real_jobs
 
 def analyze_with_ai(job_description, candidate_profile, api_key):
-    """Envoie l'offre et le profil à Claude pour validation."""
-    logging.info("Étape 2 : Analyse de l'offre par Claude...")
-    
+    logging.info("Étape 2 : Analyse et rédaction par Claude...")
     client = anthropic.Anthropic(api_key=api_key)
     
     prompt = f"""
-    Tu es un expert en recrutement IT. Ton rôle est d'analyser une offre d'emploi et de déterminer si elle correspond au profil du candidat.
+    Tu es un assistant IA de recherche d'emploi.
     
     PROFIL DU CANDIDAT :
     {candidate_profile}
@@ -88,48 +87,48 @@ def analyze_with_ai(job_description, candidate_profile, api_key):
     OFFRE D'EMPLOI :
     {job_description}
     
-    Règles de sortie obligatoires :
-    1. Calcule un pourcentage de correspondance (matching).
-    2. Si le matching est supérieur ou égal à 70%, écris "STATUT: VALIDE". Sinon, écris "STATUT: REJETE".
-    3. Résume l'analyse avec 2 points de correspondances forts et 1 point d'attention éventuel.
-    Sois concis et direct. Ne donne pas de conseils généraux.
+    Mission :
+    1. Calcule un pourcentage de matching.
+    2. Si < 70%, écris juste "STATUT: REJETE".
+    3. Si >= 70%, écris "STATUT: VALIDE". Puis, rédige un court e-mail de motivation (3 phrases max) très percutant que le candidat pourra copier-coller pour postuler à cette offre, en mettant en avant ses compétences Cloud/DevOps.
     """
 
     try:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=300,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.content[0].text
     except Exception as e:
-        logging.error(f"Erreur lors de l'appel à l'API Anthropic : {e}")
+        logging.error(f"Erreur Anthropic : {e}")
         return None
 
 def main():
     logging.info("Démarrage du pipeline de recherche automatisé.")
-    
     load_dotenv()
-    api_key = os.getenv("ANTHROPIC_API_KEY")
     
-    if not api_key or api_key == "ma-cle-secrete":
-        logging.error("ÉCHEC FATAL : Clé API Anthropic introuvable ou non configurée.")
+    # Récupération des 3 clés sécurisées
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    adzuna_id = os.getenv("ADZUNA_APP_ID")
+    adzuna_key = os.getenv("ADZUNA_APP_KEY")
+    
+    if not all([anthropic_key, adzuna_id, adzuna_key]):
+        logging.error("ÉCHEC FATAL : Il manque une ou plusieurs clés dans le fichier .env.")
         return
         
     candidate_profile = read_candidate_profile()
     if not candidate_profile:
         return
 
-    jobs = fetch_jobs()
+    jobs = fetch_jobs_via_api(adzuna_id, adzuna_key)
     
     if jobs:
         for index, job in enumerate(jobs):
-            logging.info(f"--- DEBUT DE L'ANALYSE DE L'OFFRE {index + 1} ---")
-            result = analyze_with_ai(job, candidate_profile, api_key)
+            logging.info(f"--- ANALYSE DE L'OFFRE {index + 1} ---")
+            result = analyze_with_ai(job, candidate_profile, anthropic_key)
             logging.info(f"\n{result}\n")
-            logging.info(f"--- FIN DE L'ANALYSE DE L'OFFRE {index + 1} ---")
+            logging.info("-" * 30)
 
 if __name__ == "__main__":
     main()
