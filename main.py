@@ -16,7 +16,6 @@ logging.basicConfig(
 CSV_FILENAME = "candidatures.csv"
 EXPECTED_HEADERS = ["Date Découverte", "Type", "Source", "Entreprise", "Titre", "Lieu", "Statut", "Lien", "Contact", "Date Relance", "Date Candidature", "Notes"]
 
-
 def init_csv_and_load_memory() -> set:
     seen_links = set()
     file_exists = os.path.isfile(CSV_FILENAME)
@@ -34,10 +33,9 @@ def init_csv_and_load_memory() -> set:
                 writer = csv.DictWriter(file, fieldnames=EXPECTED_HEADERS, delimiter=';')
                 writer.writeheader()
                 for row in rows:
-                    # On crée la nouvelle ligne en conservant les anciennes valeurs et en comblant les vides
                     new_row = {
                         "Date Découverte": row.get("Date Découverte", row.get("Date", "")),
-                        "Type": row.get("Type", "Offre"), # Par défaut, tes anciennes étaient des offres
+                        "Type": row.get("Type", "Offre"),
                         "Source": row.get("Source", "Inconnue"),
                         "Entreprise": row.get("Entreprise", ""),
                         "Titre": row.get("Titre", ""),
@@ -70,7 +68,6 @@ def save_to_csv(company: str, title: str, status: str, link: str, candidature_ty
     
     with open(CSV_FILENAME, mode='a', encoding='utf-8-sig', newline='') as file:
         writer = csv.writer(file, delimiter=';')
-        # On écrit : Date Découverte, Type, Source, Entreprise, Titre, Lieu, Statut, Lien, Contact (vide), Date Relance, Date Candidature (vide), Notes (vide)
         writer.writerow([date_decouverte, candidature_type, source, company, title, location, status, link, "", date_relance, "", ""])
 
 def read_candidate_profile() -> str:
@@ -83,20 +80,26 @@ def read_candidate_profile() -> str:
 
 # --- LOGIQUE FRANCE TRAVAIL ---
 def get_ft_token(client_id, client_secret):
-    url = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
+    # Ajout de ?realm=%2Fpartenaire essentiel pour se connecter à l'API
+    url = "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=%2Fpartenaire"
     data = {
         "grant_type": "client_credentials",
         "client_id": client_id,
         "client_secret": client_secret,
-        "scope": "api_offresdemploi_v2f rechercheroffresdemploi"
+        "scope": "api_offresdemploiv2 o2dsoffre"  # CORRECTION DU SCOPE ICI
     }
     response = requests.post(url, data=data)
+    
+    # Si ça échoue, on affiche le message de refus exact de France Travail
+    if response.status_code != 200:
+        logging.error(f"Détail de l'erreur d'authentification FT : {response.text}")
+        
     response.raise_for_status()
     return response.json()["access_token"]
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
 def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
-    logging.info("Recherche via API France Travail V2...")
+    logging.info("Étape 1b : Recherche via API France Travail V2...")
     url = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     params = {"motsCles": "DevOps", "typeContrat": "ALT", "range": "0-19"}
@@ -109,22 +112,20 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     for job in jobs:
         link = job.get("origineOffre", {}).get("urlOrigine", "")
         if link and link not in seen_links:
-            # Extraction du lieu pour France Travail
-            location = job.get('lieuTravail', {}).get('libelle', 'Non précisé')
-            
+            lieu = job.get("lieuTravail", {}).get("libelle", "Non précisé")
             results.append({
-                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nLieu : {location}\nDescription : {job.get('description')}",
+                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nLieu : {lieu}\nDescription : {job.get('description')}",
                 "lien_direct": link,
                 "titre": job.get('intitule'),
                 "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue'),
                 "source": "France Travail",
-                "lieu": location
+                "lieu": lieu
             })
     return results
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
 def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[dict]:
-    logging.info("Étape 1 : Recherche d'offres sur Adzuna...")
+    logging.info("Étape 1a : Recherche d'offres sur Adzuna...")
     url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
     params = {
         'app_id': app_id,
@@ -160,9 +161,7 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
         job_title = job.get('title', '')
         job_summary = job.get('description', '')
         company = job.get('company', {}).get('display_name', 'Inconnue')
-        
-        # Extraction du lieu pour Adzuna
-        location = job.get('location', {}).get('display_name', 'Non précisé')
+        lieu = job.get('location', {}).get('display_name', 'Non précisé')
         
         texte_a_verifier = f"{job_title} {job_summary} {company}".lower()
         if any(mot in texte_a_verifier for mot in mots_interdits):
@@ -170,12 +169,12 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
             continue 
             
         real_jobs.append({
-            "texte_pour_ia": f"Titre : {job_title}\nEntreprise : {company}\nLieu : {location}\nDescription : {job_summary}",
+            "texte_pour_ia": f"Titre : {job_title}\nEntreprise : {company}\nLieu : {lieu}\nDescription : {job_summary}",
             "lien_direct": job_link,
             "titre": job_title,
             "entreprise": company,
             "source": "Adzuna",
-            "lieu": location
+            "lieu": lieu
         })
     return real_jobs
 
@@ -204,7 +203,7 @@ def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str
         raise
 
 def main():
-    logging.info("Démarrage du pipeline.")
+    logging.info("Démarrage du pipeline de stockage des offres.")
     load_dotenv()
     
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -252,8 +251,8 @@ def main():
             status=status,
             link=job_data['lien_direct'],
             candidature_type="Offre",
-            source=job_data.get('source', 'Inconnue'),
-            location=job_data.get('lieu', 'Non précisé')
+            source=job_data.get("source", "Inconnue"),
+            location=job_data.get("lieu", "Non précisé")
         )
         logging.info(f"Offre stockée : {job_data['entreprise']} (Statut: {status})")
 
