@@ -2,7 +2,7 @@ import os
 import logging
 import requests
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_fixed
@@ -28,16 +28,20 @@ def init_csv_and_load_memory() -> set:
     else:
         with open(CSV_FILENAME, mode='w', encoding='utf-8-sig', newline='') as file:
             writer = csv.writer(file, delimiter=';')
-            writer.writerow(["Date", "Entreprise", "Titre", "Statut", "Lien", "Email_Genere"])
+            # Nouveaux headers pour le suivi pro
+            writer.writerow(["Date Découverte", "Entreprise", "Titre", "Statut", "Lien", "Date Relance", "Date Candidature", "Notes"])
         logging.info("Nouveau fichier candidatures.csv créé.")
             
     return seen_links
 
-def save_to_csv(company: str, title: str, status: str, link: str, email_text: str):
-    date_du_jour = datetime.now().strftime("%Y-%m-%d %H:%M")
+def save_to_csv(company: str, title: str, status: str, link: str):
+    date_decouverte = datetime.now().strftime("%Y-%m-%d")
+    date_relance = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    
     with open(CSV_FILENAME, mode='a', encoding='utf-8-sig', newline='') as file:
         writer = csv.writer(file, delimiter=';')
-        writer.writerow([date_du_jour, company, title, status, link, email_text])
+        # On écrit : Date Découverte, Entreprise, Titre, Statut, Lien, Date Relance, Date Candidature (vide), Notes (vide)
+        writer.writerow([date_decouverte, company, title, status, link, date_relance, "", ""])
 
 def read_candidate_profile() -> str:
     try:
@@ -47,7 +51,7 @@ def read_candidate_profile() -> str:
         logging.error("ÉCHEC FATAL : Le fichier candidate.md est introuvable.")
         return ""
 
-# --- NOUVELLE LOGIQUE FRANCE TRAVAIL ---
+# --- LOGIQUE FRANCE TRAVAIL ---
 def get_ft_token(client_id, client_secret):
     url = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
     data = {
@@ -142,9 +146,7 @@ def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str
     system_prompt = """Tu es un expert en recrutement DevOps. 
     1. Calcule un score de matching (0-100%).
     2. Si < 70%, réponds "STATUT: REJETE".
-    3. Si >= 70%, réponds "STATUT: VALIDE" suivi d'un email de motivation pro.
-    4. INSTRUCTION : Mentionne impérativement le rythme "3 semaines en entreprise et 1 semaine à l'école".
-    5. Termine par : "Vous trouverez mon CV détaillé en pièce jointe."
+    3. Si >= 70%, réponds "STATUT: VALIDE".
     """
 
     user_prompt = f"CV DU CANDIDAT:\n{candidate_profile}\n\nOFFRE:\n{job_data['texte_pour_ia']}"
@@ -162,7 +164,7 @@ def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str
         raise
 
 def main():
-    logging.info("Démarrage du pipeline de stockage des offres.")
+    logging.info("Démarrage du pipeline.")
     load_dotenv()
     
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -176,12 +178,14 @@ def main():
 
     jobs_to_process = []
     
+    # Récupération Adzuna
     if adzuna_id and adzuna_key:
         try:
             jobs_to_process.extend(fetch_jobs_via_adzuna(adzuna_id, adzuna_key, seen_links))
         except Exception:
             logging.error("Échec récupération Adzuna.")
 
+    # Récupération France Travail
     if ft_id and ft_secret:
         try:
             token = get_ft_token(ft_id, ft_secret)
@@ -200,16 +204,17 @@ def main():
             result = "STATUT: REJETE"
 
         is_valid = "STATUT: VALIDE" in result
-        email_content = result.split("STATUT: VALIDE")[1].strip() if is_valid else ""
+        
+        # Le statut est maintenant "En attente" si validé, sinon "Refusé"
+        status = "En attente" if is_valid else "Refusé"
         
         save_to_csv(
             company=job_data['entreprise'],
             title=job_data['titre'],
-            status="VALIDE" if is_valid else "REJETE",
-            link=job_data['lien_direct'],
-            email_text=email_content
+            status=status,
+            link=job_data['lien_direct']
         )
-        logging.info(f"Stockage réussi : {job_data['entreprise']}")
+        logging.info(f"Stockage réussi : {job_data['entreprise']} (Statut: {status})")
 
     logging.info("Pipeline terminé.")
 
