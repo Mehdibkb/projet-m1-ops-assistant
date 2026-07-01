@@ -99,12 +99,28 @@ def get_ft_token(client_id, client_secret):
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
 def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
-    logging.info("Étape 1b : Recherche via API France Travail V2...")
+    logging.info("Recherche via API France Travail V2...")
     url = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    params = {"motsCles": "DevOps", "typeContrat": "ALT", "range": "0-19"}
+    
+    # La pagination (range) doit être passée en header, pas en paramètre d'URL
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Range": "items=0-19" 
+    }
+    
+    # Paramètres de recherche (motsCles et typeContrat sont corrects)
+    params = {
+        "motsCles": "DevOps",
+        "typeContrat": "ALT"
+    }
     
     response = requests.get(url, headers=headers, params=params)
+    
+    # Si erreur 400, on affiche le détail renvoyé par FT pour debugger
+    if response.status_code == 400:
+        logging.error(f"Détail erreur FT : {response.text}")
+        
     response.raise_for_status()
     jobs = response.json().get("resultats", [])
     
@@ -112,14 +128,11 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     for job in jobs:
         link = job.get("origineOffre", {}).get("urlOrigine", "")
         if link and link not in seen_links:
-            lieu = job.get("lieuTravail", {}).get("libelle", "Non précisé")
             results.append({
-                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nLieu : {lieu}\nDescription : {job.get('description')}",
+                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nDescription : {job.get('description')}",
                 "lien_direct": link,
                 "titre": job.get('intitule'),
-                "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue'),
-                "source": "France Travail",
-                "lieu": lieu
+                "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue')
             })
     return results
 
