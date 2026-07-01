@@ -20,14 +20,14 @@ def init_csv_and_load_memory() -> set:
     file_exists = os.path.isfile(CSV_FILENAME)
     
     if file_exists:
-        with open(CSV_FILENAME, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
+        with open(CSV_FILENAME, mode='r', encoding='utf-8-sig') as file:
+            reader = csv.DictReader(file, delimiter=';')
             for row in reader:
                 seen_links.add(row.get("Lien", ""))
         logging.info(f"Mémoire chargée : {len(seen_links)} offres déjà traitées.")
     else:
-        with open(CSV_FILENAME, mode='w', encoding='utf-8', newline='') as file:
-            writer = csv.writer(file)
+        with open(CSV_FILENAME, mode='w', encoding='utf-8-sig', newline='') as file:
+            writer = csv.writer(file, delimiter=';')
             writer.writerow(["Date", "Entreprise", "Titre", "Statut", "Lien", "Email_Genere"])
         logging.info("Nouveau fichier candidatures.csv créé.")
             
@@ -35,8 +35,8 @@ def init_csv_and_load_memory() -> set:
 
 def save_to_csv(company: str, title: str, status: str, link: str, email_text: str):
     date_du_jour = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with open(CSV_FILENAME, mode='a', encoding='utf-8', newline='') as file:
-        writer = csv.writer(file)
+    with open(CSV_FILENAME, mode='a', encoding='utf-8-sig', newline='') as file:
+        writer = csv.writer(file, delimiter=';')
         writer.writerow([date_du_jour, company, title, status, link, email_text])
 
 def read_candidate_profile() -> str:
@@ -176,14 +176,12 @@ def main():
 
     jobs_to_process = []
     
-    # Récupération Adzuna
     if adzuna_id and adzuna_key:
         try:
             jobs_to_process.extend(fetch_jobs_via_adzuna(adzuna_id, adzuna_key, seen_links))
         except Exception:
             logging.error("Échec récupération Adzuna.")
 
-    # Récupération France Travail
     if ft_id and ft_secret:
         try:
             token = get_ft_token(ft_id, ft_secret)
@@ -191,7 +189,7 @@ def main():
         except Exception as e:
             logging.error(f"Échec récupération France Travail : {e}")
     
-    jobs_to_process = jobs_to_process[:20] # Augmenté à 20 pour intégrer 2 sources
+    jobs_to_process = jobs_to_process[:20]
     
     for job_data in jobs_to_process:
         logging.info(f"Traitement : {job_data['titre']}")
