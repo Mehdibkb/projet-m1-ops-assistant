@@ -14,6 +14,8 @@ logging.basicConfig(
 )
 
 CSV_FILENAME = "candidatures.csv"
+EXPECTED_HEADERS = ["Date Découverte", "Type", "Source", "Entreprise", "Titre", "Lieu", "Statut", "Lien", "Contact", "Date Relance", "Date Candidature", "Notes"]
+
 
 def init_csv_and_load_memory() -> set:
     seen_links = set()
@@ -22,26 +24,54 @@ def init_csv_and_load_memory() -> set:
     if file_exists:
         with open(CSV_FILENAME, mode='r', encoding='utf-8-sig') as file:
             reader = csv.DictReader(file, delimiter=';')
-            for row in reader:
+            headers = reader.fieldnames
+            rows = list(reader)
+            
+        # MIGRATION AUTOMATIQUE DES ANCIENNES DONNÉES
+        if headers != EXPECTED_HEADERS:
+            logging.info("Mise à jour de l'ancien fichier CSV vers le nouveau format sans perte de données...")
+            with open(CSV_FILENAME, mode='w', encoding='utf-8-sig', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=EXPECTED_HEADERS, delimiter=';')
+                writer.writeheader()
+                for row in rows:
+                    # On crée la nouvelle ligne en conservant les anciennes valeurs et en comblant les vides
+                    new_row = {
+                        "Date Découverte": row.get("Date Découverte", row.get("Date", "")),
+                        "Type": row.get("Type", "Offre"), # Par défaut, tes anciennes étaient des offres
+                        "Source": row.get("Source", "Inconnue"),
+                        "Entreprise": row.get("Entreprise", ""),
+                        "Titre": row.get("Titre", ""),
+                        "Lieu": row.get("Lieu", "Non précisé"),
+                        "Statut": row.get("Statut", ""),
+                        "Lien": row.get("Lien", ""),
+                        "Contact": row.get("Contact", ""),
+                        "Date Relance": row.get("Date Relance", ""),
+                        "Date Candidature": row.get("Date Candidature", ""),
+                        "Notes": row.get("Notes", "")
+                    }
+                    writer.writerow(new_row)
+                    seen_links.add(new_row["Lien"])
+            logging.info("Migration terminée avec succès !")
+        else:
+            for row in rows:
                 seen_links.add(row.get("Lien", ""))
-        logging.info(f"Mémoire chargée : {len(seen_links)} offres déjà traitées.")
+            logging.info(f"Mémoire chargée : {len(seen_links)} offres déjà traitées.")
     else:
         with open(CSV_FILENAME, mode='w', encoding='utf-8-sig', newline='') as file:
             writer = csv.writer(file, delimiter=';')
-            # Nouveaux headers pour le suivi pro
-            writer.writerow(["Date Découverte", "Entreprise", "Titre", "Statut", "Lien", "Date Relance", "Date Candidature", "Notes"])
+            writer.writerow(EXPECTED_HEADERS)
         logging.info("Nouveau fichier candidatures.csv créé.")
             
     return seen_links
 
-def save_to_csv(company: str, title: str, status: str, link: str):
+def save_to_csv(company: str, title: str, status: str, link: str, candidature_type: str, source: str, location: str):
     date_decouverte = datetime.now().strftime("%Y-%m-%d")
     date_relance = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     
     with open(CSV_FILENAME, mode='a', encoding='utf-8-sig', newline='') as file:
         writer = csv.writer(file, delimiter=';')
-        # On écrit : Date Découverte, Entreprise, Titre, Statut, Lien, Date Relance, Date Candidature (vide), Notes (vide)
-        writer.writerow([date_decouverte, company, title, status, link, date_relance, "", ""])
+        # On écrit : Date Découverte, Type, Source, Entreprise, Titre, Lieu, Statut, Lien, Contact (vide), Date Relance, Date Candidature (vide), Notes (vide)
+        writer.writerow([date_decouverte, candidature_type, source, company, title, location, status, link, "", date_relance, "", ""])
 
 def read_candidate_profile() -> str:
     try:
@@ -79,11 +109,16 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     for job in jobs:
         link = job.get("origineOffre", {}).get("urlOrigine", "")
         if link and link not in seen_links:
+            # Extraction du lieu pour France Travail
+            location = job.get('lieuTravail', {}).get('libelle', 'Non précisé')
+            
             results.append({
-                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nDescription : {job.get('description')}",
+                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nLieu : {location}\nDescription : {job.get('description')}",
                 "lien_direct": link,
                 "titre": job.get('intitule'),
-                "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue')
+                "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue'),
+                "source": "France Travail",
+                "lieu": location
             })
     return results
 
@@ -126,16 +161,21 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
         job_summary = job.get('description', '')
         company = job.get('company', {}).get('display_name', 'Inconnue')
         
+        # Extraction du lieu pour Adzuna
+        location = job.get('location', {}).get('display_name', 'Non précisé')
+        
         texte_a_verifier = f"{job_title} {job_summary} {company}".lower()
         if any(mot in texte_a_verifier for mot in mots_interdits):
             logging.info(f"Filtre Anti-École : {company} ignorée.")
             continue 
             
         real_jobs.append({
-            "texte_pour_ia": f"Titre : {job_title}\nEntreprise : {company}\nDescription : {job_summary}",
+            "texte_pour_ia": f"Titre : {job_title}\nEntreprise : {company}\nLieu : {location}\nDescription : {job_summary}",
             "lien_direct": job_link,
             "titre": job_title,
-            "entreprise": company
+            "entreprise": company,
+            "source": "Adzuna",
+            "lieu": location
         })
     return real_jobs
 
@@ -193,10 +233,10 @@ def main():
         except Exception as e:
             logging.error(f"Échec récupération France Travail : {e}")
     
+    # 1. Traitement des OFFRES (avec IA)
     jobs_to_process = jobs_to_process[:20]
-    
     for job_data in jobs_to_process:
-        logging.info(f"Traitement : {job_data['titre']}")
+        logging.info(f"Traitement IA : {job_data['titre']}")
         
         try:
             result = analyze_with_ai(job_data, candidate_profile, anthropic_key)
@@ -204,19 +244,42 @@ def main():
             result = "STATUT: REJETE"
 
         is_valid = "STATUT: VALIDE" in result
-        
-        # Le statut est maintenant "En attente" si validé, sinon "Refusé"
         status = "En attente" if is_valid else "Refusé"
         
         save_to_csv(
             company=job_data['entreprise'],
             title=job_data['titre'],
             status=status,
-            link=job_data['lien_direct']
+            link=job_data['lien_direct'],
+            candidature_type="Offre",
+            source=job_data.get('source', 'Inconnue'),
+            location=job_data.get('lieu', 'Non précisé')
         )
-        logging.info(f"Stockage réussi : {job_data['entreprise']} (Statut: {status})")
+        logging.info(f"Offre stockée : {job_data['entreprise']} (Statut: {status})")
 
-    logging.info("Pipeline terminé.")
+    # 2. Traitement des CANDIDATURES SPONTANÉES (sans IA, stockage direct)
+    spontaneous_companies = [
+        "OVHcloud", "Scaleway", "Orange", "Thales", 
+        "Capgemini", "Sopra Steria", "Ubisoft", "Doctolib", 
+        "CGI", "Atos"
+    ]
+    
+    for company in spontaneous_companies:
+        fake_link = f"Spontanée - {company}"
+        if fake_link not in seen_links:
+            save_to_csv(
+                company=company,
+                title="Candidature Spontanée DevOps",
+                status="À postuler",
+                link=fake_link,
+                candidature_type="Spontanée",
+                source="Ciblage direct",
+                location="À définir"
+            )
+            seen_links.add(fake_link)
+            logging.info(f"Entreprise cible stockée : {company}")
+
+    logging.info("Pipeline terminé avec succès.")
 
 if __name__ == "__main__":
     main()
