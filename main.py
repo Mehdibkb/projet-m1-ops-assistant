@@ -47,9 +47,45 @@ def read_candidate_profile() -> str:
         logging.error("ÉCHEC FATAL : Le fichier candidate.md est introuvable.")
         return ""
 
+# --- NOUVELLE LOGIQUE FRANCE TRAVAIL ---
+def get_ft_token(client_id, client_secret):
+    url = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "api_offresdemploi_v2f rechercheroffresdemploi"
+    }
+    response = requests.post(url, data=data)
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
+def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
+    logging.info("Recherche via API France Travail V2...")
+    url = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    params = {"motsCles": "DevOps", "typeContrat": "ALT", "range": "0-19"}
+    
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+    jobs = response.json().get("resultats", [])
+    
+    results = []
+    for job in jobs:
+        link = job.get("origineOffre", {}).get("urlOrigine", "")
+        if link and link not in seen_links:
+            results.append({
+                "texte_pour_ia": f"Titre : {job.get('intitule')}\nEntreprise : {(job.get('entreprise') or {}).get('nom', 'Inconnue')}\nDescription : {job.get('description')}",
+                "lien_direct": link,
+                "titre": job.get('intitule'),
+                "entreprise": job.get('entreprise', {}).get('nom', 'Inconnue')
+            })
+    return results
+
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
 def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[dict]:
-    logging.info("Étape 1a : Recherche d'offres sur Adzuna...")
+    logging.info("Étape 1 : Recherche d'offres sur Adzuna...")
     url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
     params = {
         'app_id': app_id,
@@ -67,11 +103,15 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
         response.raise_for_status() 
         data = response.json()
     except requests.exceptions.RequestException as e:
-        logging.warning(f"Bégaiement du réseau (API Adzuna). Erreur: {e}")
+        logging.warning(f"Erreur réseau Adzuna : {e}")
         raise 
 
     real_jobs = []
-    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "organisme de formation"]
+    mots_interdits = [
+        "école", "ecole", "formation", "campus", "bootcamp", "organisme de formation",
+        "iscod", "openclassrooms", "simplon", "epitech", "my digital school", 
+        "alternance ingénieur infrastructure", "cfa"
+    ]
     
     for job in data.get('results', []):
         job_link = job.get('redirect_url', 'Lien non disponible') 
@@ -82,8 +122,9 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
         job_summary = job.get('description', '')
         company = job.get('company', {}).get('display_name', 'Inconnue')
         
-        texte_a_verifier = f"{job_title} {job_summary}".lower()
+        texte_a_verifier = f"{job_title} {job_summary} {company}".lower()
         if any(mot in texte_a_verifier for mot in mots_interdits):
+            logging.info(f"Filtre Anti-École : {company} ignorée.")
             continue 
             
         real_jobs.append({
@@ -95,75 +136,18 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
     return real_jobs
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
-def fetch_jobs_via_lba(seen_links: set) -> list[dict]:
-    logging.info("Étape 1b : Recherche d'offres sur La Bonne Alternance (API État)...")
-    url = "https://labonnealternance.apprentissage.beta.gouv.fr/api/v1/jobs"
-    
-    # Codes ROME pour l'IT/DevOps, et géolocalisation autour de Rennes (100km)
-    params = {
-        "romes": "M1810,M1805", # Production SI et Développement
-        "caller": "assistant-devops-mehdi",
-        "latitude": 48.117266,  # Latitude Rennes
-        "longitude": -1.677792, # Longitude Rennes
-        "radius": 100,          # Rayon de 100km
-        "sources": "matcha,offres" # Offres LBA + France Travail
-    }
-    
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-    except requests.exceptions.RequestException as e:
-        logging.warning(f"Bégaiement du réseau (API LBA). Erreur: {e}")
-        raise
-
-    real_jobs = []
-    mots_interdits = ["école", "ecole", "formation", "campus", "bootcamp", "organisme de formation"]
-    
-    # LBA renvoie deux listes : peJobs (France Travail) et matchas (LBA natif)
-    all_results = data.get('peJobs', {}).get('results', []) + data.get('matchas', {}).get('results', [])
-    
-    for job in all_results:
-        job_link = job.get('url', 'Lien non disponible')
-        if job_link in seen_links or job_link == 'Lien non disponible':
-            continue
-            
-        job_title = job.get('title', '')
-        company = job.get('company', {}).get('name', 'Inconnue')
-        
-        # LBA structure parfois la description différemment selon la source
-        job_summary = job.get('description', '')
-        if not job_summary and 'job' in job:
-            job_summary = job['job'].get('description', '')
-
-        texte_a_verifier = f"{job_title} {job_summary}".lower()
-        if any(mot in texte_a_verifier for mot in mots_interdits):
-            continue
-            
-        real_jobs.append({
-            "texte_pour_ia": f"Titre : {job_title}\nEntreprise : {company}\nDescription : {job_summary}",
-            "lien_direct": job_link,
-            "titre": job_title,
-            "entreprise": company
-        })
-        
-    return real_jobs
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
 def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str:
     client = anthropic.Anthropic(api_key=api_key)
     
-    system_prompt = """Tu es un expert implacable en recrutement DevOps.
-    Règles strictes :
-    1. Calcule un pourcentage de matching réel entre le CV et l'offre.
-    2. Si < 70%, écris UNIQUEMENT "STATUT: REJETE".
-    3. Si >= 70%, écris "STATUT: VALIDE". 
-    4. Rédige ensuite un e-mail de motivation court (3-4 phrases MAX) très percutant. 
-    5. INSTRUCTION CRUCIALE : Tu dois obligatoirement mentionner le rythme "3 semaines en entreprise et 1 semaine à l'école".
-    6. Termine l'e-mail par : "Vous trouverez mon CV détaillé en pièce jointe."
+    system_prompt = """Tu es un expert en recrutement DevOps. 
+    1. Calcule un score de matching (0-100%).
+    2. Si < 70%, réponds "STATUT: REJETE".
+    3. Si >= 70%, réponds "STATUT: VALIDE" suivi d'un email de motivation pro.
+    4. INSTRUCTION : Mentionne impérativement le rythme "3 semaines en entreprise et 1 semaine à l'école".
+    5. Termine par : "Vous trouverez mon CV détaillé en pièce jointe."
     """
 
-    user_prompt = f"PROFIL DU CANDIDAT :\n{candidate_profile}\n\nOFFRE D'EMPLOI :\n{job_data['texte_pour_ia']}"
+    user_prompt = f"CV DU CANDIDAT:\n{candidate_profile}\n\nOFFRE:\n{job_data['texte_pour_ia']}"
 
     try:
         response = client.messages.create(
@@ -174,66 +158,62 @@ def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str
         )
         return response.content[0].text
     except Exception as e:
-        logging.warning(f"Bégaiement de l'IA. Erreur: {e}")
+        logging.warning(f"Erreur IA : {e}")
         raise
 
 def main():
-    logging.info("Démarrage du Super-Pipeline (Adzuna + La Bonne Alternance).")
+    logging.info("Démarrage du pipeline de stockage des offres.")
     load_dotenv()
     
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     adzuna_id = os.getenv("ADZUNA_APP_ID")
     adzuna_key = os.getenv("ADZUNA_APP_KEY")
+    ft_id = os.getenv("FT_CLIENT_ID")
+    ft_secret = os.getenv("FT_CLIENT_SECRET")
     
-    if not all([anthropic_key, adzuna_id, adzuna_key]):
-        logging.error("ÉCHEC FATAL : Il manque une ou plusieurs clés dans le fichier .env.")
-        return
-        
     candidate_profile = read_candidate_profile()
-    if not candidate_profile:
-        return
-
     seen_links = init_csv_and_load_memory()
 
-    # 1. Collecte Multi-Sources
     jobs_to_process = []
-    try:
-        jobs_to_process.extend(fetch_jobs_via_adzuna(adzuna_id, adzuna_key, seen_links))
-        jobs_to_process.extend(fetch_jobs_via_lba(seen_links))
-    except Exception:
-        logging.error("Échec de la récupération sur l'une des APIs.")
     
-    # 2. Gestion FinOps : On limite à 10 nouvelles offres max par exécution
-    jobs_to_process = jobs_to_process[:10]
-    logging.info(f"Nombre total de nouvelles offres à analyser par l'IA : {len(jobs_to_process)}")
-    
-    if jobs_to_process:
-        for index, job_data in enumerate(jobs_to_process):
-            logging.info(f"\n{'='*50}\n🔎 OFFRE {index + 1} : {job_data['titre']} ({job_data['entreprise']})")
-            
-            try:
-                result = analyze_with_ai(job_data, candidate_profile, anthropic_key)
-            except Exception:
-                logging.error(f"Échec de l'analyse IA pour cette offre.")
-                continue
+    # Récupération Adzuna
+    if adzuna_id and adzuna_key:
+        try:
+            jobs_to_process.extend(fetch_jobs_via_adzuna(adzuna_id, adzuna_key, seen_links))
+        except Exception:
+            logging.error("Échec récupération Adzuna.")
 
-            logging.info(f"\n{result}\n")
-            
-            if result and "STATUT: VALIDE" in result:
-                try:
-                    email_only = result.split("STATUT: VALIDE")[1].strip()
-                except IndexError:
-                    email_only = result
-                    
-                save_to_csv(job_data['entreprise'], job_data['titre'], "VALIDE", job_data['lien_direct'], email_only)
-                logging.info(f" Candidature sauvegardée dans {CSV_FILENAME}")
-            else:
-                logging.info(f" Offre rejetée par l'IA.")
-                save_to_csv(job_data['entreprise'], job_data['titre'], "REJETE", job_data['lien_direct'], "")
-                
-            logging.info("-" * 50)
-    else:
-        logging.info("Aucune nouvelle offre à traiter. Ton pipeline est à jour !")
+    # Récupération France Travail
+    if ft_id and ft_secret:
+        try:
+            token = get_ft_token(ft_id, ft_secret)
+            jobs_to_process.extend(fetch_jobs_via_ft(token, seen_links))
+        except Exception as e:
+            logging.error(f"Échec récupération France Travail : {e}")
+    
+    jobs_to_process = jobs_to_process[:20] # Augmenté à 20 pour intégrer 2 sources
+    
+    for job_data in jobs_to_process:
+        logging.info(f"Traitement : {job_data['titre']}")
+        
+        try:
+            result = analyze_with_ai(job_data, candidate_profile, anthropic_key)
+        except Exception:
+            result = "STATUT: REJETE"
+
+        is_valid = "STATUT: VALIDE" in result
+        email_content = result.split("STATUT: VALIDE")[1].strip() if is_valid else ""
+        
+        save_to_csv(
+            company=job_data['entreprise'],
+            title=job_data['titre'],
+            status="VALIDE" if is_valid else "REJETE",
+            link=job_data['lien_direct'],
+            email_text=email_content
+        )
+        logging.info(f"Stockage réussi : {job_data['entreprise']}")
+
+    logging.info("Pipeline terminé.")
 
 if __name__ == "__main__":
     main()
