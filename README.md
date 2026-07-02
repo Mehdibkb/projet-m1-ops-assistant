@@ -25,7 +25,7 @@ J'ai conçu un pipeline en Python qui :
 
 ## 🚀 Évolution DevOps (V2 - En cours)
 
-Le script fonctionne, mais nécessite encore une action manuelle pour être lancé. L'objectif de la V2 n'est pas seulement de l'automatiser, mais de m'en servir comme **projet vitrine** pour manipuler une chaîne d'outils DevOps de bout en bout — de la conteneurisation à l'orchestration.
+Le script fonctionne, mais nécessite encore une action manuelle pour être lancé. L'objectif de la V2 n'est pas seulement de l'automatiser, mais de m'en servir comme **projet vitrine** pour manipuler une chaîne d'outils DevOps de bout en bout (de la conteneurisation à l'orchestration)
 
 **Note d'architecture :** pour un simple cron quotidien, un `cron` classique ou un GitHub Actions `schedule` suffiraient largement. Je choisis volontairement une stack plus complète (Docker → CI → Kubernetes) à des fins d'apprentissage et de démonstration de compétences, pas parce que le besoin fonctionnel l'exige. Je l'assume et le documente ici pour que ce soit explicite
 
