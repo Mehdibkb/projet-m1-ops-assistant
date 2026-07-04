@@ -1,4 +1,5 @@
 requests
+tenacity
 python-dotenv
 anthropic
 feedparser
