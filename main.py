@@ -117,6 +117,10 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     }
     
     response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 204:
+        logging.info("France Travail : Aucune nouvelle offre publiée ces dernières 24h")
+        return []
     
     # Si erreur 400, on affiche le détail renvoyé par FT pour debugger
     if response.status_code == 400:
