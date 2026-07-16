@@ -112,7 +112,8 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     # Paramètres de recherche (motsCles et typeContrat sont corrects)
     params = {
         "motsCles": "DevOps",
-        "natureContrat": "E2"
+        "natureContrat": "E2",
+        "publieeDepuis": 1
     }
     
     response = requests.get(url, headers=headers, params=params)
