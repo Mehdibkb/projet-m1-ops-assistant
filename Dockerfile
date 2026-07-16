@@ -21,6 +21,13 @@ RUN mkdir -p src && chown mehdi:mehdi src
 # -chown=mehdi:mehdi : on donne la propriété des fichiers à "mehdi"
 COPY --chown=mehdi:mehdi main.py candidate.md ./
 
+# On crée un dossier isolé uniquement pour la donnée persistante
+RUN mkdir -p /data && chown mehdi:mehdi /data
+
+# lien symbolique : quand Python lira/écrira candidatures.csv, 
+# il sera redirigé silencieusement vers le dossier /data
+RUN ln -s /data/candidatures.csv /usr/local/mon_script/src/candidatures.csv
+
 # On bascule sur l'utilisateur sécurisé
 USER mehdi
 
