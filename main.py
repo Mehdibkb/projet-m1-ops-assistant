@@ -147,7 +147,7 @@ def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[di
         'what': 'devops alternance',
         'where': 'france',
         'sort_by': 'date',
-        'max_days_old': 3,
+        'max_days_old': 1,
         'content-type': 'application/json'
     }
     
