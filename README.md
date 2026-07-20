@@ -6,7 +6,7 @@
 
 Chercher une alternance est chronophage et répétitif (parcourir les mêmes sites, filtrer les écoles déguisées en entreprises, lire des dizaines d'offres non pertinentes). En tant que futur Ingénieur DevOps, mon réflexe a été d'automatiser ce flux et d'en profiter en même temps comme terrain d'entraînement pour manipuler une chaîne d'outils DevOps réelle (conteneurisation, CI, orchestration)
 
-## 🛠️ Solution (V1 - Actuelle)
+## 🛠️ Solution (V2 - Actuelle)
 
 J'ai conçu un pipeline en Python qui :
 
@@ -31,23 +31,23 @@ Le script fonctionne, mais nécessite encore une action manuelle pour être lanc
 
 ### Étapes, dans l'ordre logique
 
-- [ ] **Conteneurisation (Docker)**
+- [x] **Conteneurisation (Docker)**
   Packaging de l'application dans une image Docker (script + dépendances figées via `requirements.txt`), pour garantir sa portabilité et l'isoler de l'environnement hôte. C'est le socle : tout ce qui suit s'appuie sur cette image
 
-- [ ] **Intégration Continue (CI) avec Jenkins**
+- [x] **Intégration Continue (CI) avec Jenkins**
   Un job Jenkins déclenché à chaque `push` sur le dépôt :
   - lint + tests unitaires du script Python,
   - build de l'image Docker,
   - push de l'image vers un registre (Docker Hub ou registre privé).
   *(C'est ici qu'intervient le vrai sens du mot "CI" : validation automatique du code à chaque changement, pas juste une exécution planifiée)*
 
-- [ ] **3. Déploiement serveur**
+- [x] **3. Déploiement serveur**
   Hébergement sur un VPS, qui exécute l'image Docker construite à l'étape précédente (via un simple `docker run` en cron, en attendant l'étape K8s)
 
-- [ ] **4. Orchestration (Kubernetes - initiation)**
+- [ ] **4. Orchestration (Kubernetes)**
   Objectif d'apprentissage à moyen terme : déployer ce service dans un cluster local (Minikube ou K3s) sous forme de **CronJob** Kubernetes, pour manipuler manifests, Secrets et ConfigMaps
 
-- [ ] **5. Notifications**
+- [x] **5. Notifications**
   Envoi des offres "Validées par l'IA" par mail ou notification mobile, une fois le pipeline exécuté
 
 ### Points d'architecture à ne pas négliger
