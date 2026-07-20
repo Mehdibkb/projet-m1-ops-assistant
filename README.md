@@ -6,7 +6,7 @@
 
 Chercher une alternance est chronophage et répétitif (parcourir les mêmes sites, filtrer les écoles déguisées en entreprises, lire des dizaines d'offres non pertinentes). En tant que futur Ingénieur DevOps, mon réflexe a été d'automatiser ce flux et d'en profiter en même temps comme terrain d'entraînement pour manipuler une chaîne d'outils DevOps réelle (conteneurisation, CI, orchestration)
 
-## 🛠️ Solution (V1 - Actuelle)
+## 🛠️ Solution (V2 - Actuelle)
 
 J'ai conçu un pipeline en Python qui :
 
@@ -44,7 +44,7 @@ Le script fonctionne, mais nécessite encore une action manuelle pour être lanc
 - [x] **3. Déploiement serveur**
   Hébergement sur un VPS, qui exécute l'image Docker construite à l'étape précédente (via un simple `docker run` en cron, en attendant l'étape K8s)
 
-- [ ] **4. Orchestration (Kubernetes - initiation)**
+- [ ] **4. Orchestration (Kubernetes)**
   Objectif d'apprentissage à moyen terme : déployer ce service dans un cluster local (Minikube ou K3s) sous forme de **CronJob** Kubernetes, pour manipuler manifests, Secrets et ConfigMaps
 
 - [x] **5. Notifications**
