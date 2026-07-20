@@ -1,0 +1,52 @@
+Doctolib
+Qonto
+Back Market
+Alan
+Ledger
+Malt
+Swile
+Payfit
+ManoMano
+BlaBlaCar
+Vinted
+Aircall
+Contentsquare
+Miro
+Spendesk
+Mistral AI
+Hugging Face
+Poolside
+Exotec
+Yuka
+Dataiku
+The Fork
+Lifen
+360Learning
+Wiz
+Padok
+WeScale
+Enix
+Ippon Technologies
+XPA
+Devoteam
+Sopra Steria Next
+Apside
+Human Coders
+Zenika
+Octo Technology
+Smile
+Ineo
+Google Cloud
+AWS
+Microsoft
+OVHcloud
+Scaleway
+Clever Cloud
+Lucca
+Datadog
+Elastic
+HashiCorp
+GitLab
+Docker
+Criteo
+SNCF Connect

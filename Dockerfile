@@ -19,7 +19,7 @@ RUN mkdir -p src && chown mehdi:mehdi src
 
 # Copie du code source avec attribution des droits à notre utilisateur
 # -chown=mehdi:mehdi : on donne la propriété des fichiers à "mehdi"
-COPY --chown=mehdi:mehdi main.py candidate.md ./
+COPY --chown=mehdi:mehdi main.py candidate.md entreprises_cibles.txt ./
 
 # On crée un dossier isolé uniquement pour la donnée persistante
 RUN mkdir -p /data && chown mehdi:mehdi /data

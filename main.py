@@ -302,27 +302,29 @@ def main():
         )
         logging.info(f"Offre stockée : {job_data['entreprise']} (Statut: {status})")
 
-    # 2. Traitement des CANDIDATURES SPONTANÉES (sans IA, stockage direct)
-    spontaneous_companies = [
-        "OVHcloud", "Scaleway", "Orange", "Thales", 
-        "Capgemini", "Sopra Steria", "Ubisoft", "Doctolib", 
-        "CGI", "Atos"
-    ]
-    
-    for company in spontaneous_companies:
-        fake_link = f"Spontanée - {company}"
-        if fake_link not in seen_links:
-            save_to_csv(
-                company=company,
-                title="Candidature Spontanée DevOps",
-                status="À postuler",
-                link=fake_link,
-                candidature_type="Spontanée",
-                source="Ciblage direct",
-                location="À définir"
-            )
-            seen_links.add(fake_link)
-            logging.info(f"Entreprise cible stockée : {company}")
+    # 2. Traitement des CANDIDATURES SPONTANÉES (Lecture depuis le fichier externe)
+    companies_file = "entreprises_cibles.txt"
+    if os.path.exists(companies_file):
+        with open(companies_file, "r", encoding="utf-8") as f:
+            # On nettoie la ligne et on exclut les commentaires
+            spontaneous_companies = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            
+        for company in spontaneous_companies:
+            fake_link = f"Spontanée - {company}"
+            if fake_link not in seen_links:
+                save_to_csv(
+                    company=company,
+                    title="Candidature Spontanée DevOps",
+                    status="À postuler",
+                    link=fake_link,
+                    candidature_type="Spontanée",
+                    source="Ciblage direct",
+                    location="À définir"
+                )
+                seen_links.add(fake_link)
+                logging.info(f"Entreprise cible stockée : {company}")
+    else:
+        logging.warning("Fichier entreprises_cibles.txt introuvable, étape spontanée ignorée")
 
     logging.info("Pipeline terminé avec succès.")
 
