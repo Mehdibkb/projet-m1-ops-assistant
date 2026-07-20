@@ -99,7 +99,7 @@ def get_ft_token(client_id, client_secret):
     return response.json()["access_token"]
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(5), reraise=True)
-def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
+def fetch_jobs_via_ft(token, keyword: str, seen_links: set) -> list[dict]:
     logging.info("Recherche via API France Travail V2...")
     url = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
     
@@ -112,7 +112,7 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
     
     # Paramètres de recherche (motsCles et typeContrat sont corrects)
     params = {
-        "motsCles": "DevOps",
+        "motsCles": keyword,
         "natureContrat": "E2",
         "publieeDepuis": 1
     }
@@ -146,11 +146,12 @@ def fetch_jobs_via_ft(token, seen_links: set) -> list[dict]:
 def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[dict]:
     logging.info("Étape 1a : Recherche d'offres sur Adzuna...")
     url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
+    search_keywords = "devops alternance OR cloud alternance OR 'systèmes et réseaux' alternance"
     params = {
         'app_id': app_id,
         'app_key': app_key,
         'results_per_page': 20,
-        'what': 'devops alternance',
+        'what': search_keywords,
         'where': 'france',
         'sort_by': 'date',
         'max_days_old': 1,
@@ -262,14 +263,19 @@ def main():
 
     # Récupération France Travail
     if ft_id and ft_secret:
+        keywords_list = ["DevOps alternance", "Ingénieur Cloud alternance", "Systèmes et Réseaux alternance", "Data Engineer alternance"]
         try:
             token = get_ft_token(ft_id, ft_secret)
-            jobs_to_process.extend(fetch_jobs_via_ft(token, seen_links))
+            for kw in keywords_list:
+                jobs_to_process.extend(fetch_jobs_via_ft(token, kw, seen_links))
         except Exception as e:
             logging.error(f"Échec récupération France Travail : {e}")
+
+    # Élimination des doublons potentiels récoltés par les différents mots-clés
+    unique_jobs = {job['lien_direct']: job for job in jobs_to_process}.values()
+    jobs_to_process = list(unique_jobs)[:20] # On garde les 20 premières meilleures offres
     
     # 1. Traitement des OFFRES (avec IA)
-    jobs_to_process = jobs_to_process[:20]
     for job_data in jobs_to_process:
         logging.info(f"Traitement IA : {job_data['titre']}")
         
