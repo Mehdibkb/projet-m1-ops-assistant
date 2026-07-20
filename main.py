@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import csv
+import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import anthropic
@@ -220,6 +221,23 @@ def analyze_with_ai(job_data: dict, candidate_profile: str, api_key: str) -> str
         logging.warning(f"Erreur IA : {e}")
         raise
 
+def send_slack_notification(message: str):
+    # Récupération de l'URL depuis les variables d'environnement
+    webhook_url = os.getenv("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        return
+
+    slack_data = {'text': message}
+    try:
+        response = requests.post(
+            webhook_url, 
+            data=json.dumps(slack_data),
+            headers={'Content-Type': 'application/json'}
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Erreur lors de l'envoi Slack : {e}")
+
 def main():
     logging.info("Démarrage du pipeline de stockage des offres.")
     load_dotenv()
@@ -261,7 +279,11 @@ def main():
             result = "STATUT: REJETE"
 
         is_valid = "STATUT: VALIDE" in result
-        status = "En attente" if is_valid else "Refusé"
+        if is_valid:
+            status = "En attente"
+            send_slack_notification(f"Nouvelle opportunité DevOps : *{job_data['titre']}* chez *{job_data['entreprise']}*!\nLien : {job_data['lien_direct']}")
+        else:
+            status = "Refusé"
         
         save_to_csv(
             company=job_data['entreprise'],
