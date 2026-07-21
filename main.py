@@ -113,7 +113,7 @@ def fetch_jobs_via_ft(token, keyword: str, seen_links: set) -> list[dict]:
     # Paramètres de recherche (motsCles et typeContrat sont corrects)
     params = {
         "motsCles": keyword,
-        "natureContrat": "E2",
+    #    "natureContrat": "E2",
         "publieeDepuis": 1
     }
     
@@ -146,7 +146,7 @@ def fetch_jobs_via_ft(token, keyword: str, seen_links: set) -> list[dict]:
 def fetch_jobs_via_adzuna(app_id: str, app_key: str, seen_links: set) -> list[dict]:
     logging.info("Étape 1a : Recherche d'offres sur Adzuna...")
     url = "https://api.adzuna.com/v1/api/jobs/fr/search/1"
-    search_keywords = "devops alternance OR cloud alternance OR 'systèmes et réseaux' alternance"
+    search_keywords = "devops alternance OR devops stage OR cloud alternance OR cloud stage OR infrastructure alternance OR infrastructure stage OR kubernetes alternance OR kubernetes stage OR automatisation alternance OR automatisation stage"
     params = {
         'app_id': app_id,
         'app_key': app_key,
@@ -263,7 +263,24 @@ def main():
 
     # Récupération France Travail
     if ft_id and ft_secret:
-        keywords_list = ["DevOps alternance", "Ingénieur Cloud alternance", "Systèmes et Réseaux alternance", "Data Engineer alternance"]
+        # On définit uniquement les "racines" des métiers
+        base_keywords = [
+            "DevOps", 
+            "Ingénieur Cloud", 
+            "Systèmes et Réseaux", 
+            "Data Engineer",
+            "Automatisation",
+            "Infrastructure",
+            "Kubernetes",
+            "Industrialisation"
+        ]
+        
+        # Le script va générer automatiquement la liste complète (stage + alternance)
+        keywords_list = []
+        for kw in base_keywords:
+            keywords_list.append(f"{kw} alternance")
+            keywords_list.append(f"{kw} stage")
+            
         try:
             token = get_ft_token(ft_id, ft_secret)
             for kw in keywords_list:
